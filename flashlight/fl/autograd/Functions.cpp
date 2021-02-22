@@ -1200,15 +1200,28 @@ fl::Variable multiheadAttention(
   auto q = moddims(query, af::dim4(-1, headDim, nHeads * bsz));
   auto k = moddims(key, af::dim4(-1, headDim, nHeads * bsz));
   auto v = moddims(value, af::dim4(-1, headDim, nHeads * bsz));
+  if (af::anyTrue<bool>(af::isNaN(q.array())) ||
+      af::anyTrue<bool>(af::isInf(q.array()))) {
+    std::cout << "bad mha1\n";
+  }
 
   q = q / std::sqrt(float(headDim));
   auto scores = matmulNT(q, k);
+  if (af::anyTrue<bool>(af::isNaN(scores.array())) ||
+      af::anyTrue<bool>(af::isInf(scores.array()))) {
+    std::cout << "bad mha2\n";
+  }
   if (!posEmb.isempty()) {
     int n = posEmb.dims(0) / 2 - offset;
     auto pscores =
         relativePositionEmbeddingRotate(matmulNT(posEmb.as(q.type()), q));
     scores = scores + transpose(pscores.rows(n, n + k.dims(0) - 1));
   }
+  if (af::anyTrue<bool>(af::isNaN(scores.array())) ||
+      af::anyTrue<bool>(af::isInf(scores.array()))) {
+    std::cout << "bad mha3\n";
+  }
+  scores = scores.as(f32);  
   if (!mask.isempty()) {
     scores = scores + tileAs(mask.as(scores.type()), scores);
   }
@@ -1226,7 +1239,12 @@ fl::Variable multiheadAttention(
   }
 
   auto attn = dropout(softmax(scores, 1), pDropout);
-  auto result = matmul(attn.as(v.type()), v);
+  auto result = matmul(attn, v.as(attn.type()));
+  // auto result = matmul(attn.as(v.type()), v);
+  if (af::anyTrue<bool>(af::isNaN(result.array())) ||
+      af::anyTrue<bool>(af::isInf(result.array()))) {
+    std::cout << "bad mha4\n";
+  }
   result = moddims(result, af::dim4(-1, headDim * nHeads, bsz));
   return result;
 }

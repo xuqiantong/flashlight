@@ -67,6 +67,12 @@ std::vector<Variable> TransformerCriterion::forward(
         " target, inputSizes [optional], targetSizes [optional]");
   }
   const auto& input = inputs[0];
+  // std::cout << "a " << inputs[0].type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(input.array())) ||
+  //     af::anyTrue<bool>(af::isInf(input.array()))) {
+  //   std::cout << "bad a\n";
+  // }
+
   const auto& target = inputs[1];
   const auto& inputSizes =
       inputs.size() == 2 ? af::array() : inputs[2].array(); // 1 x B
@@ -76,12 +82,29 @@ std::vector<Variable> TransformerCriterion::forward(
   Variable out, alpha;
   std::tie(out, alpha) =
       vectorizedDecoder(input, target, inputSizes, targetSizes);
+  // std::cout << "b " << out.type() << std::endl;
+    if (af::anyTrue<bool>(af::isNaN(out.array()))) {
+      std::cout << "bad b nan\n";
+    }
+    if (af::anyTrue<bool>(af::isInf(out.array()))) {
+      std::cout << "bad b inf\n";
+    }
 
   out = logSoftmax(out, 0);
+  // std::cout << "c " << out.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(out.array())) ||
+  //     af::anyTrue<bool>(af::isInf(out.array()))) {
+  //   std::cout << "bad c\n";
+  // }
 
   auto losses = moddims(
       sum(categoricalCrossEntropy(out, target, ReduceMode::NONE, pad_), {0}),
       -1);
+  // std::cout << "d " << losses.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(losses.array())) ||
+  //     af::anyTrue<bool>(af::isInf(losses.array()))) {
+  //   std::cout << "bad d\n";
+  // }
   if (train_ && labelSmooth_ > 0) {
     size_t nClass = out.dims(0);
     auto targetTiled = af::tile(
@@ -89,8 +112,23 @@ std::vector<Variable> TransformerCriterion::forward(
             target.array(), af::dim4(1, target.dims(0), target.dims(1))),
         nClass);
     out = applySeq2SeqMask(out, targetTiled, pad_);
+    // std::cout << "e " << out.type() << std::endl;
+    // if (af::anyTrue<bool>(af::isNaN(out.array())) ||
+    //     af::anyTrue<bool>(af::isInf(out.array()))) {
+    //   std::cout << "bad e\n";
+    // }
     auto smoothLoss = moddims(sum(out, {0, 1}), -1);
+    // std::cout << "f " << smoothLoss.type() << std::endl;
+    // if (af::anyTrue<bool>(af::isNaN(smoothLoss.array())) ||
+    //     af::anyTrue<bool>(af::isInf(smoothLoss.array()))) {
+    //   std::cout << "bad f\n";
+    // }
     losses = (1 - labelSmooth_) * losses - (labelSmooth_ / nClass) * smoothLoss;
+    // std::cout << "g " << losses.type() << std::endl;
+    // if (af::anyTrue<bool>(af::isNaN(losses.array())) ||
+    //     af::anyTrue<bool>(af::isInf(losses.array()))) {
+    //   std::cout << "bad g\n";
+    // }
   }
 
   return {losses, out};
@@ -103,6 +141,11 @@ std::pair<Variable, Variable> TransformerCriterion::vectorizedDecoder(
     const Variable& target,
     const af::array& inputSizes,
     const af::array& targetSizes) {
+  // std::cout << "1 " << input.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(input.array())) ||
+  //     af::anyTrue<bool>(af::isInf(input.array()))) {
+  //   std::cout << "bad 1\n";
+  // }
   int U = target.dims(0);
   int B = target.dims(1);
   int T = input.isempty() ? 0 : input.dims(1);
@@ -126,12 +169,22 @@ std::pair<Variable, Variable> TransformerCriterion::vectorizedDecoder(
     auto yEmbed = embedding()->forward(y);
     hy = concatenate({hy, yEmbed}, 1);
   }
+  // std::cout << "2 " << hy.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(hy.array())) ||
+  //     af::anyTrue<bool>(af::isInf(hy.array()))) {
+  //   std::cout << "bad 2\n";
+  // }
 
   Variable alpha, summaries;
   Variable padMask; // no mask, decoder is not looking into future
   for (int i = 0; i < nLayer_; i++) {
     hy = layer(i)->forward(std::vector<Variable>({hy, padMask})).front();
   }
+  // std::cout << "3 " << hy.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(hy.array())) ||
+  //     af::anyTrue<bool>(af::isInf(hy.array()))) {
+  //   std::cout << "bad 3\n";
+  // }
 
   if (!input.isempty()) {
     Variable windowWeight;
@@ -145,8 +198,18 @@ std::pair<Variable, Variable> TransformerCriterion::vectorizedDecoder(
 
     hy = hy + summaries;
   }
+  // std::cout << "4 " << hy.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(hy.array())) ||
+  //     af::anyTrue<bool>(af::isInf(hy.array()))) {
+  //   std::cout << "bad 4\n";
+  // }
 
   auto out = linearOut()->forward(hy);
+  // std::cout << "5 " << out.type() << std::endl;
+  // if (af::anyTrue<bool>(af::isNaN(hy.array())) ||
+  //     af::anyTrue<bool>(af::isInf(hy.array()))) {
+  //   std::cout << "bad 5\n";
+  // }
 
   return std::make_pair(out, alpha);
 }

@@ -1116,15 +1116,6 @@ int main(int argc, char** argv) {
           netopt->zeroGrad();
           critopt->zeroGrad();
           loss.backward();
-          if (reducer) {
-            reducer->finalize();
-          }
-          af::sync();
-          meters.bwdtimer.stopAndIncUnit();
-
-          // optimizer
-          meters.optimtimer.resume();
-
           // scale down gradients by batchsize * scale factor
           af::array totalBatchSizeArr =
               af::constant(batch[kInputIdx].dims(3), 1, f32);
@@ -1137,7 +1128,21 @@ int main(int argc, char** argv) {
               continue;
             }
             p.grad() = p.grad() / (totalBatchSize * scaleFactor);
-            if (FLAGS_fl_amp_use_mixed_precision) {
+          }
+          if (reducer) {
+            reducer->finalize();
+          }
+          af::sync();
+          meters.bwdtimer.stopAndIncUnit();
+
+          // optimizer
+          meters.optimtimer.resume();
+
+          if (FLAGS_fl_amp_use_mixed_precision) {
+            for (const auto& p : ntwrk->params()) {
+              if (!p.isGradAvailable()) {
+                continue;
+              }
               if (af::anyTrue<bool>(af::isNaN(p.grad().array())) ||
                   af::anyTrue<bool>(af::isInf(p.grad().array()))) {
                 if (scaleFactor >= fl::kAmpMinimumScaleFactorValue) {

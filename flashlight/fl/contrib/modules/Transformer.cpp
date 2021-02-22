@@ -64,7 +64,26 @@ Transformer::Transformer(
 
 Variable Transformer::mlp(const Variable& input) {
   float pDropout = train_ ? pDropout_ : 0.0;
-  return (*w2_)(dropout(relu((*w1_)(input)), pDropout));
+  if (af::anyTrue<bool>(af::isNaN(input.array())) ||
+      af::anyTrue<bool>(af::isInf(input.array()))) {
+    std::cout << "bad m1\n";
+  }
+  auto res = (*w1_)(input);
+  if (af::anyTrue<bool>(af::isNaN(res.array())) ||
+      af::anyTrue<bool>(af::isInf(res.array()))) {
+    std::cout << "bad m2\n";
+  }
+  res = dropout(relu(res), pDropout);
+  if (af::anyTrue<bool>(af::isNaN(res.array())) ||
+      af::anyTrue<bool>(af::isInf(res.array()))) {
+    std::cout << "bad m3\n";
+  }
+  res = (*w2_)(res);
+  if (af::anyTrue<bool>(af::isNaN(res.array())) ||
+      af::anyTrue<bool>(af::isInf(res.array()))) {
+    std::cout << "bad m4\n";
+  }
+  return res;
 }
 
 Variable Transformer::getMask(int32_t n, bool cache) {
@@ -108,9 +127,21 @@ Variable Transformer::selfAttention(const std::vector<Variable>& input) {
         af::resize(padMaskArr, encoderInput.dims(1), encoderInput.dims(2));
     padMask = fl::Variable(af::log(padMaskArr), false);
   }
+  if (af::anyTrue<bool>(af::isNaN(q.array())) ||
+      af::anyTrue<bool>(af::isInf(q.array()))) {
+    std::cout << "bad sa1\n";
+  }
   auto result = multiheadAttention(
       q, k, v, posEmb, mask, padMask, nHeads_, pDrop, offset);
+  if (af::anyTrue<bool>(af::isNaN(result.array())) ||
+      af::anyTrue<bool>(af::isInf(result.array()))) {
+    std::cout << "bad sa2\n";
+  }
   result = (*wf_)(transpose(result));
+  if (af::anyTrue<bool>(af::isNaN(result.array())) ||
+      af::anyTrue<bool>(af::isInf(result.array()))) {
+    std::cout << "bad sa3\n";
+  }
 
   return result;
 }
@@ -129,17 +160,77 @@ std::vector<Variable> Transformer::forward(const std::vector<Variable>& input) {
     throw std::invalid_argument(
         "Invalid inputs for transformer block: input and Mask batch sizes are different");
   }
+  if (af::anyTrue<bool>(af::isNaN(x.array())) ||
+      af::anyTrue<bool>(af::isInf(x.array()))) {
+    std::cout << "bad A\n";
+  }
 
   float f = 1.0;
   if (train_ && (af::randu(1).scalar<float>() < pLayerdrop_)) {
     f = 0.0;
   }
   if (preLN_) {
-    auto h = (f * (*norm1_)(selfAttention(input))).as(x.type()) + x;
-    return {f * (*norm2_)(mlp(h)).as(h.type()) + h};
+    auto h = selfAttention(input);
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array())) ||
+        af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B1\n";
+    }
+    h = (f * (*norm1_)(h));
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array())) ||
+        af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B2\n";
+    }
+    h = h.as(x.type()) + x;
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array())) ||
+        af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B3\n";
+    }
+    // h = f * (*norm2_)(mlp(h)).as(h.type()) + h;
+    h = f * (*norm2_)(mlp(h)) + h.as(f32);
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array())) ||
+        af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad C\n";
+    }
+    return {h};
   } else {
-    auto h = (*norm1_)((f * selfAttention(input)).as(x.type()) + x);
-    return {(*norm2_)((f * mlp(h)).as(h.type()) + h)};
+    auto h = selfAttention(input);
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array())) ||
+        af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B1\n";
+    }
+    // std::cout << x.type() << " " << h.type() << std::endl;
+    h = (f * (h)).as(x.type()) + x;
+    h.eval();
+    // h = (f * (h)) + x.as(f32);
+    if (af::anyTrue<bool>(af::isNaN(h.array()))) {
+      std::cout << "bad B2 nan\n";
+    }
+    if (af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B2 inf\n";
+    }
+    h = (*norm1_)(h);
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array()))) {
+      std::cout << "bad B3 nan\n";
+    }
+    if (af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad B3 inf\n";
+    }
+    // h = f * (*norm2_)(mlp(h)).as(h.type()) + h;
+    h = f * (*norm2_)(mlp(h)) + h.as(f32);
+    h.eval();
+    if (af::anyTrue<bool>(af::isNaN(h.array()))) {
+      std::cout << "bad C nan\n";
+    }
+    if (af::anyTrue<bool>(af::isInf(h.array()))) {
+      std::cout << "bad C inf\n";
+    }
+    return {h};
   }
 }
 
